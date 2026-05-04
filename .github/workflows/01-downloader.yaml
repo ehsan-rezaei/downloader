@@ -24,7 +24,6 @@ on:
 jobs:
   save-file:
     runs-on: ubuntu-latest
-    # Force Node.js 24 to remove the deprecation warning for actions/checkout@v4
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
@@ -35,10 +34,10 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install aria2 and zip
+      - name: Install tools (wget, zip)
         run: |
           sudo apt-get update
-          sudo apt-get install -y aria2 zip
+          sudo apt-get install -y wget zip
 
       - name: AVASAM Downloader
         run: |
@@ -51,10 +50,11 @@ jobs:
           URLS="${{ github.event.inputs.urls }}"
           for URL in $URLS; do
             echo "🔍 Testing: $URL"
-            curl -I -L \
-              -H "Referer: https://www.microsoft.com/en-us/download/details.aspx?id=100419" \
-              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              "$URL" | head -n 5
+            wget --spider \
+              --header="Cookie: license_accept=yes" \
+              --referer="https://www.microsoft.com/en-us/download/details.aspx?id=100419" \
+              --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+              "$URL" 2>&1 | grep -E "(HTTP|Location|Remote file exists)"
           done
 
       - name: Download files
@@ -66,19 +66,19 @@ jobs:
           echo "🏷️  AVASAM (https://avasam.ir) - Downloading with mode: $MODE"
           echo "Split threshold: $SPLIT_THRESHOLD_MB MB"
           mkdir -p downloads tmp_downloads
+
           for URL in $URLS; do
             FILENAME=$(basename "$URL")
             echo "⬇️ Downloading $URL -> $FILENAME"
-            aria2c \
-              --split=2 \
-              --max-connection-per-server=2 \
-              --min-split-size=90M \
-              --dir="tmp_downloads" \
-              --out="$FILENAME" \
-              --header="Referer: https://www.microsoft.com/en-us/download/details.aspx?id=100419" \
+
+            wget \
+              --header="Cookie: license_accept=yes" \
+              --referer="https://www.microsoft.com/en-us/download/details.aspx?id=100419" \
               --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
-              "$URL"
+              -O "tmp_downloads/$FILENAME" \
+              "$URL" || { echo "❌ Download failed for $URL"; exit 1; }
           done
+
           # Zip all downloads if mode is 'zip'
           if [ "$MODE" = "zip" ]; then
             ARCHIVE_NAME="downloads/archive_$(date +%Y%m%d_%H%M%S).zip"
